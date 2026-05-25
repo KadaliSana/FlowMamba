@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+NUMERIC_FEATURE_COUNT = 5
+
 
 @dataclass(frozen=True)
 class ZeekCaptureConfig:
@@ -195,11 +197,11 @@ def build_encoder_input(records: list[ZeekFlowRecord]) -> FlowEncoderInput:
 
         raw_vectors.append(
             [
-                max(record.duration, 0.0),
-                float(max(record.orig_bytes, 0)),
-                float(max(record.resp_bytes, 0)),
-                float(max(record.orig_pkts, 0)),
-                float(max(record.resp_pkts, 0)),
+                _clamp_non_negative(record.duration, "duration"),
+                float(_clamp_non_negative(record.orig_bytes, "orig_bytes")),
+                float(_clamp_non_negative(record.resp_bytes, "resp_bytes")),
+                float(_clamp_non_negative(record.orig_pkts, "orig_pkts")),
+                float(_clamp_non_negative(record.resp_pkts, "resp_pkts")),
                 *proto_flags,
             ]
         )
@@ -217,7 +219,7 @@ def build_encoder_input(records: list[ZeekFlowRecord]) -> FlowEncoderInput:
 
     vectors = _min_max_normalize(
         raw_vectors,
-        normalize_upto_index=5,  # numeric traffic features only
+        normalize_upto_index=NUMERIC_FEATURE_COUNT,
     )
 
     return FlowEncoderInput(
@@ -237,6 +239,7 @@ def _to_float(value: str | None, unset_field: str) -> float:
 
 
 def _to_int(value: str | None, unset_field: str) -> int:
+    """Parse integer-like values; decimal strings are truncated toward zero."""
     if not value or value == unset_field:
         return 0
     try:
@@ -254,6 +257,11 @@ def _min_max_normalize(
     """Min-max normalize numeric columns; constant columns map to 0.0."""
     if not vectors:
         return vectors
+    min_len = min(len(row) for row in vectors)
+    if normalize_upto_index > min_len:
+        raise ValueError(
+            f"normalize_upto_index={normalize_upto_index} exceeds vector length {min_len}."
+        )
 
     mins = [float("inf")] * normalize_upto_index
     maxs = [float("-inf")] * normalize_upto_index
@@ -272,3 +280,14 @@ def _min_max_normalize(
         normalized.append(out)
 
     return normalized
+
+
+def _clamp_non_negative(value: int | float, field_name: str) -> float:
+    if value < 0:
+        warnings.warn(
+            f"Clamping negative {field_name}={value} to 0.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return 0.0
+    return float(value)
