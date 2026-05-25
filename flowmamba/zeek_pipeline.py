@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,11 @@ def parse_zeek_conn_log(conn_log_path: str | Path) -> list[ZeekFlowRecord]:
 
             values = line.split(separator)
             if len(values) != len(fields):
+                warnings.warn(
+                    "Skipping malformed conn.log row due to field count mismatch.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 continue
             row = dict(zip(fields, values))
 
@@ -236,12 +242,16 @@ def _to_int(value: str | None, unset_field: str) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
-        return 0
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
 
 
 def _min_max_normalize(
     vectors: list[list[float]], normalize_upto_index: int
 ) -> list[list[float]]:
+    """Min-max normalize numeric columns; constant columns map to 0.0."""
     if not vectors:
         return vectors
 
