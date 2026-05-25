@@ -142,7 +142,6 @@ def parse_zeek_conn_log(conn_log_path: str | Path) -> list[ZeekFlowRecord]:
                 warnings.warn(
                     "Skipping malformed conn.log row due to field count mismatch.",
                     RuntimeWarning,
-                    stacklevel=2,
                 )
                 continue
             row = dict(zip(fields, values))
@@ -258,6 +257,8 @@ def _min_max_normalize(
     if not vectors:
         return vectors
     min_len = min(len(row) for row in vectors)
+    if min_len == 0:
+        raise ValueError("Vectors must not contain empty rows.")
     if normalize_upto_index > min_len:
         raise ValueError(
             f"normalize_upto_index={normalize_upto_index} exceeds vector length {min_len}."
@@ -287,7 +288,6 @@ def _clamp_non_negative(value: int | float, field_name: str) -> float:
         warnings.warn(
             f"Clamping negative {field_name}={value} to 0.",
             RuntimeWarning,
-            stacklevel=2,
         )
         return 0.0
     return float(value)
