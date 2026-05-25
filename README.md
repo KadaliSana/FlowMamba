@@ -13,8 +13,8 @@ Baseline Zeek packet-capture pipeline in Python for producing packet-flow-encode
 
 ## Structure
 
-- `/home/runner/work/FlowMamba/FlowMamba/flowmamba/zeek_pipeline.py` – capture + parse + encode
-- `/home/runner/work/FlowMamba/FlowMamba/flowmamba/cli.py` – command-line entrypoint
+- `flowmamba/zeek_pipeline.py` – capture + parse + encode
+- `flowmamba/cli.py` – command-line entrypoint
 
 ## Usage
 

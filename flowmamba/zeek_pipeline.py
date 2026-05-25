@@ -17,6 +17,7 @@ class ZeekCaptureConfig:
     zeek_path: str = "zeek"
     local_policy: str = "local"
     no_checksums: bool = True
+    timeout_seconds: int | None = 300
 
     def validate(self) -> None:
         if not self.interface and not self.pcap_path:
@@ -73,7 +74,18 @@ def run_zeek_capture(config: ZeekCaptureConfig) -> Path:
     cmd.append(config.local_policy)
     cmd.append(f"Log::default_logdir={output_dir}")
 
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=config.timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Zeek timed out after {config.timeout_seconds} seconds."
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
             f"Zeek failed (exit {proc.returncode}). stderr:\n{proc.stderr.strip()}"
