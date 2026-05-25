@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-NUMERIC_FEATURE_COUNT = 5
+NUMERIC_FEATURE_COUNT = 9
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,10 @@ class ZeekFlowRecord:
     orig_pkts: int
     resp_pkts: int
     conn_state: str
+    rtt: float
+    jitter: float
+    packet_rate: float
+    mean_iat: float
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,12 @@ def run_zeek_capture(config: ZeekCaptureConfig) -> Path:
         cmd.extend(["-r", config.pcap_path])
 
     cmd.append(config.local_policy)
+    
+    # Load custom flow_features script if it exists
+    script_path = Path(__file__).parent / "flow_features.zeek"
+    if script_path.exists():
+        cmd.append(str(script_path))
+
     cmd.append(f"Log::default_logdir={output_dir}")
 
     try:
@@ -146,6 +156,15 @@ def parse_zeek_conn_log(conn_log_path: str | Path) -> list[ZeekFlowRecord]:
                 continue
             row = dict(zip(fields, values))
 
+            orig_pkts = _to_int(row.get("orig_pkts"), unset_field)
+            resp_pkts = _to_int(row.get("resp_pkts"), unset_field)
+            duration = _to_float(row.get("duration"), unset_field)
+
+            # Fallback for packet_rate if the custom script wasn't run
+            packet_rate = _to_float(row.get("packet_rate"), unset_field)
+            if "packet_rate" not in row and duration > 0.0:
+                packet_rate = (orig_pkts + resp_pkts) / duration
+
             records.append(
                 ZeekFlowRecord(
                     ts=_to_float(row.get("ts"), unset_field),
@@ -155,12 +174,16 @@ def parse_zeek_conn_log(conn_log_path: str | Path) -> list[ZeekFlowRecord]:
                     id_resp_h=row.get("id.resp_h", ""),
                     id_resp_p=_to_int(row.get("id.resp_p"), unset_field),
                     proto=row.get("proto", ""),
-                    duration=_to_float(row.get("duration"), unset_field),
+                    duration=duration,
                     orig_bytes=_to_int(row.get("orig_bytes"), unset_field),
                     resp_bytes=_to_int(row.get("resp_bytes"), unset_field),
-                    orig_pkts=_to_int(row.get("orig_pkts"), unset_field),
-                    resp_pkts=_to_int(row.get("resp_pkts"), unset_field),
+                    orig_pkts=orig_pkts,
+                    resp_pkts=resp_pkts,
                     conn_state=row.get("conn_state", ""),
+                    rtt=_to_float(row.get("rtt"), unset_field),
+                    jitter=_to_float(row.get("jitter"), unset_field),
+                    packet_rate=packet_rate,
+                    mean_iat=_to_float(row.get("mean_iat"), unset_field),
                 )
             )
 
@@ -176,6 +199,10 @@ def build_encoder_input(records: list[ZeekFlowRecord]) -> FlowEncoderInput:
         "resp_bytes",
         "orig_pkts",
         "resp_pkts",
+        "rtt",
+        "jitter",
+        "packet_rate",
+        "mean_iat",
         "proto_tcp",
         "proto_udp",
         "proto_icmp",
@@ -201,6 +228,10 @@ def build_encoder_input(records: list[ZeekFlowRecord]) -> FlowEncoderInput:
                 float(_clamp_non_negative(record.resp_bytes, "resp_bytes")),
                 float(_clamp_non_negative(record.orig_pkts, "orig_pkts")),
                 float(_clamp_non_negative(record.resp_pkts, "resp_pkts")),
+                _clamp_non_negative(record.rtt, "rtt"),
+                _clamp_non_negative(record.jitter, "jitter"),
+                _clamp_non_negative(record.packet_rate, "packet_rate"),
+                _clamp_non_negative(record.mean_iat, "mean_iat"),
                 *proto_flags,
             ]
         )
